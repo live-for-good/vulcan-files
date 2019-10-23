@@ -11,7 +11,7 @@ Package.onUse(api => {
 
   api.use([
     'ecmascript',
-    'vulcan:core@1.11.0',
+    'vulcan:core@1.13.4',
     'ostrio:files@1.9.11',
     'origenstudio:files-helpers@0.0.2'
   ]);
