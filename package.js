@@ -1,13 +1,13 @@
 Package.describe({
   name: "origenstudio:vulcan-files",
-  version: "1.0.0-alpha.1",
+  version: "1.0.1",
   summary:
     "Provides Vulcan with the capability of uploading files to server using Meteor-Files",
   git: "https://github.com/OrigenStudio/vulcan-files",
   documentation: "README.md",
 });
 
-Package.onUse(api => {
+Package.onUse((api) => {
   api.versionsFrom("1.6.1");
 
   api.use([
