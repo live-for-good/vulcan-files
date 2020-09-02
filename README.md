@@ -18,22 +18,19 @@ In your project's root folder run:
 To avoid using `Npm.depends` this package does not include any NPM module, so you will have to install them yourself by running the following command:
 
 ```
-meteor npm install async-busboy@^0.6.2 brackets2dots@^1.1.0 lodash@^4.0.0 object-path@^0.11.4 randomstring@^1.1.5 react-dropzone@^3.12.2 recursive-iterator@^3.3.0 knox@^0.9.2 gm@^1.23.1
+meteor npm install gm@^1.23.1 lodash@^4.0.0 randomstring@^1.1.5 react-dropzone@^3.12.2 recursive-iterator@^3.3.0 apollo-upload-client@^11.0.0
 ```
 
 Alternatively, here you have a list of the packages and versions required, so you can add them to your project's `package.json`:
 
 ```json
 {
-    "async-busboy": "^0.6.2",
-    "brackets2dots": "^1.1.0",
     "gm": "^1.23.1",
-    "knox": "^0.9.2",
     "lodash": "^4.0.0",
-    "object-path": "^0.11.4",
     "randomstring": "^1.1.5",
     "react-dropzone": "^3.12.2",
-    "recursive-iterator": "^3.3.0"
+    "recursive-iterator": "^3.3.0",
+    "apollo-upload-client": "^11.0.0"
 }
 ```
 
@@ -49,6 +46,7 @@ One problem of directly working with [Meteor-Files](https://github.com/VeliovGro
 import { createFSCollection } from 'meteor/origenstudio:vulcan-files';
 
 const MyFSCollection = createFSCollection({
+  typeName: 'MyFSTypeName', // optional, defaults to `collectionName`
   collectionName: 'MyFSCollection',
   // ...other FilesCollection options
 });
@@ -66,59 +64,82 @@ This module provides a `generateFieldSchema` function that will handle many of t
 // TODO add documentation, see `Vulcanstagram` example for now
 ```
 
-### 2.3. Uploading to 3rd parties
+### 2.3. Callback hooks
 
-Right now only Amazon S3 is supported.
+#### 2.3.1. Upload hooks
 
-#### 2.3.1 Amazon S3
+##### After upload
 
-You can create an S3 client easily with the `createS3Client` function: you only need to provide it your bucket configuration and your CloudFront domain. As always, a stub function is exported in client so you can use this function anywhere.
+Two hooks are executed when a file has been uploaded: 
 
-Since you'll want to have your S3 configuration in your settings, you can retrieve them with Vulcan's `getSetting` function.
+- `*.upload.after`: runs for all collections 
+- `{typename}.upload.after`: runs with the uploaded file type name
 
-```json
-{
-  "amazonAWSS3": {
-    "mainBucket": {
-      "cfdomain": "https://yourdomain.cloudfront.net",
-      "client": {
-        "key": "",
-        "secret": "",
-        "region": "eu-west-1",
-        "bucket": "your-bucket-name"
-      }
-    }
-  }
-}
-```
-
-Now you can create the S3 client from your settings:
-
-```js
-import { getSetting } from 'meteor/vulcan:core';
-import { createS3Client } from 'meteor/origenstudio:vulcan-files';
-
-// make sure the path of the settings match your own!
-const s3Client = createS3Client(
-  getSetting('amazonAWSS3.mainBucket.client'),
-  getSetting('amazonAWSS3.mainBucket.cfdomain'),
-);
-
-if (Meteor.isClient) {
-  // is empty object so you can safely retrieve properties from it
-  console.log(s3Client); //-> {}
-}
+Signature of callbacks added to these hooks:
 
 ```
+(fileDocument, { FSCollection }) => fileDocument
+```
 
-Once you have your client, you can use it to provide the 3rd party function that `createFSCollection` expects:
+Note that these hooks won't reflect any change on the file document (as it has already been saved), but it can be useful to perform side effects.
+
+### 2.4. Uploading to 3rd parties
+
+This package provides an easy integration with third party services, though it does not include any out of the box. You can integrate with you preferred 3rd party service by using one of the following packages:
+
+- Amazon S3: [origenstudio:vulcan-files-s3](https://github.com/OrigenStudio/vulcan-files-s3)
+
+##### Creating custom integrations
+
+You can integrate with your own third party storage provider by setting the `storageProvider` option when creating the files collection. It should have the following shape:
 
 ```js
-const MyFilesS3 = createFSCollection({
-  collectionName: 'MyFilesS3',
-  uploadTo3rdParty: s3Client.upload,
-  deleteFrom3rdParty: s3Client.delete,
-})
+const storageProvider = {
+  /**
+   * Called when a document is inserted, and it should be used to upload the file
+   * into the storage provider.
+   * 
+   * @param {Collection} FSCollection
+   *  Meteor Files collection
+   * @param {string} documentId
+   *  Id of the inserted file document
+   * @param {Object} versionRef
+   *  Information of the version of the file being uploaded
+   * @return {Promise<any>}
+   */
+  upload: async (FSCollection, documentId, versionRef) => versionRef,
+  /**
+   * Called when a document is deleted, and it should be used to delete the file
+   * from the storage provider.
+   * 
+   * @param {Collection} FSCollection
+   *  Meteor Files collection
+   * @param {string} documentId
+   *  Id of the file document being deleted
+   * @param {Object} versionRef
+   *  Information of the version of the file being deleted
+   * @return {Promise<any>}
+   * @throws Error if could not delete file
+   */
+  delete: async (FSCollection, documentId, versionRef) => versionRef,
+  /**
+   * Called when a document is requested to be served, and it should be used to
+   * serve the file from the storage provider.
+   * 
+   * Note that by returning `false` the standard behavior will be resumed, and
+   * it should be done when the file has not been uploaded (ex: during upload).
+   * 
+   * @param {object} http
+   *  Middleware request instance, as provided by Meteor Files
+   * @param {object} fileRef
+   *  The fileRef of the document to be served
+   * @param {string} version
+   *  The version name of the document to be served
+   * @return {Boolean}
+   *  `true` to intercept request, `false` to continue standard behaviour
+   */
+  serve: (http, fileRef, version) => false,
+};
 ```
 
 ## 3. Examples
@@ -131,5 +152,4 @@ Features:
 
 - single file
 - uses default field's value behavior, so only the file id is stored
-- resolves only the file url
 - images will be uploaded to `S3` if config is provided
